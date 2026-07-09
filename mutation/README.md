@@ -131,6 +131,7 @@ To predict mutation effects on your own proteins:
 2. Download corresponding AlphaFold PDB files into `pdbs/`
 3. Run Step 1 to Step 5 to generate `dataset/test_dataset.npz`
 4. Run `python test.py`
+
 ---
 ## 5. Generalization to Independent Datasets
 > **Note:** The preprocessing scripts are demonstrated using the training dataset (`train.csv`) as an example. For an independent test dataset, the identical preprocessing pipeline should be applied after replacing the input CSV with the corresponding test mutation file. No modifications to the feature extraction algorithms are required.
