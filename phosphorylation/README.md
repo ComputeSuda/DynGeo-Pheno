@@ -28,6 +28,7 @@ phosphorylation/
 ├── example/                      # Example CSV files
 ├── features/                     # Precomputed PCA params & feature cache
 ├── pdbs/                         # AlphaFold structures
+├── checkpoints/                  # Downloaded from Baidu
 │
 └── README.md
 ```
