@@ -106,19 +106,31 @@ The training script performs:
 - `checkpoints/train_summary.json` (Optimal threshold & OOF metrics)
 The optimal decision threshold estimated from cross-validation is stored in `train_summary.json` and will be reused automatically during testing.
 ---
-## 4. Testing
-First, ensure your independent test dataset is prepared as `dataset/test_dataset.npz` (see Section 5 below). Then run:
+## 4. Testing & Inference
+We provide pre-trained 10-fold models (`model_fold_1.keras` to `model_fold_10.keras`) for direct inference without retraining.
+### 4.1 Download Pre-trained Models
+Due to their large size, the model files are hosted on Baidu Netdisk. **You must download them before testing.**
+**🔗 Download Link:** [Baidu Netdisk](https://pan.baidu.com/s/109AK8jtM2114dd9-KZEU1w?pwd=wkev) (Extraction code: `wkev`)
+**Setup:**
+1. Download the `checkpoints` folder from the link above.
+2. Place it in `mutation/checkpoints/` (should contain `model_fold_1.keras` to `model_fold_10.keras` and `train_summary.json`).
+3. Alternatively, you can find the link in the `model.txt` file in the repository root.
+### 4.2 Run Inference on Test Set
+Ensure your test dataset is prepared as `dataset/test_dataset.npz` (see Section 5). Then run:
 ```bash
 python test.py
 ```
-The testing script automatically:
-- Loads all 10 trained models
-- Performs ensemble prediction (averaging probabilities)
-- Applies the optimal threshold estimated during training
-- Reports classification metrics
-**Outputs:**
-- `test_results.xlsx` (Ensemble metrics)
-- `test_results_single_model_compare.xlsx` (Per-model metrics)
+The script will:
+- Load all 10 pre-trained models
+- Perform ensemble prediction
+- Apply the optimal threshold from `train_summary.json`
+- Output metrics to `test_results.xlsx`
+### 4.3 Predicting Your Own Data
+To predict mutation effects on your own proteins:
+1. Prepare your CSV with `UniProtKB_AC-ID`, `position`, `wild_aa`, `mut_aa`
+2. Download corresponding AlphaFold PDB files into `pdbs/`
+3. Run Step 1 to Step 5 to generate `dataset/test_dataset.npz`
+4. Run `python test.py`
 ---
 ## 5. Generalization to Independent Datasets
 > **Note:** The preprocessing scripts are demonstrated using the training dataset (`train.csv`) as an example. For an independent test dataset, the identical preprocessing pipeline should be applied after replacing the input CSV with the corresponding test mutation file. No modifications to the feature extraction algorithms are required.
