@@ -1,7 +1,3 @@
-这是为您修改后的 **`DynGeo/README.md`**（去除了所有 `<details>` 标签，将内容直接平铺），以及完整的 **`DynGeo/requirements.txt`**，您可以一键复制使用。
----
-### 1. `DynGeo/README.md`
-```markdown
 # DynGeo: Dynamics-Integrated Geometric Deep Learning for Protein Functional Site Prediction
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.9+-blue.svg)
