@@ -1,3 +1,7 @@
+这是为您修改后的 **`DynGeo/README.md`**（去除了所有 `<details>` 标签，将内容直接平铺），以及完整的 **`DynGeo/requirements.txt`**，您可以一键复制使用。
+---
+### 1. `DynGeo/README.md`
+```markdown
 # DynGeo: Dynamics-Integrated Geometric Deep Learning for Protein Functional Site Prediction
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.9+-blue.svg)
@@ -50,6 +54,7 @@ DynGeo/
 ├── mutation/                     # Implementation for pathogenic missense mutations
 ├── phosphorylation/              # Implementation for regulatory phosphorylation sites
 ├── environment.yml               # Shared Conda environment configuration
+├── requirements.txt              # Required Python dependencies
 └── README.md                     # Current file
 ```
 ## Quick Start
@@ -79,11 +84,15 @@ python test.py
 ### 1. Environment Setup
 We recommend using `conda` to manage the environment. DynGeo requires Python ≥3.9, PyTorch ≥2.5, and TensorFlow ≥2.20.
 ```bash
-git clone https://github.com/ComputeSud/DynGeo.git
+git clone https://github.com/ComputeSuda/DynGeo.git
 cd DynGeo
 # Create the environment using the provided yml file
 conda env create -f environment.yml
 conda activate dl_env
+```
+Alternatively, you can use `pip` with the provided `requirements.txt`:
+```bash
+pip install -r requirements.txt
 ```
 ### 2. Download AlphaFold Structures
 Both tasks require high-quality structural inputs. Please refer to the `pdbs/download_pdbs.txt` file in each task directory to fetch the corresponding PDB files from the [AlphaFold Protein Structure Database](https://alphafold.ebi.ac.uk/).
@@ -147,9 +156,8 @@ DynGeo was developed and tested on the following hardware and software configura
 | **tqdm** | 4.67.1 | conda-forge |
 | **h5py** | 3.14.0 | pypi |
 | **openpyxl** | 3.1.5 | conda-forge |
-<details>
-<summary><b>📁 Complete Conda Environment Export</b></summary>
-The complete environment can be reproduced using:
+### Complete Conda Environment Export
+The complete environment can be reproduced from scratch using the following commands:
 ```bash
 # Create environment from scratch
 conda create -n dl_env python=3.9.23
@@ -164,12 +172,11 @@ pip install fair-esm==2.0.0 biopython>=1.79 prody>=2.4.0 \
             scikit-learn==1.6.1 tqdm==4.67.1 \
             h5py==3.14.0 openpyxl==3.1.5
 ```
-</details>
 ## Reproducibility
 To ensure full reproducibility of experimental results, we provide the following checklist and resources:
 ### ✅ Reproducibility Checklist
 - [x] **Code Availability**: Complete source code is available on GitHub.
-- [x] **Dependency Specification**: `environment.yml` file is provided.
+- [x] **Dependency Specification**: `environment.yml` and `requirements.txt` files are provided.
 - [x] **Random Seed Control**: All random seeds are fixed in training scripts.
 - [x] **Data Splits**: Training/validation/test splits are clearly defined.
 - [x] **Hyperparameters**: All hyperparameters are specified in configuration files.
@@ -177,15 +184,13 @@ To ensure full reproducibility of experimental results, we provide the following
 - [x] **Evaluation Metrics**: Evaluation metrics are clearly defined.
 - [x] **Hardware Specification**: Hardware configuration is documented.
 - [x] **Runtime Information**: Training and inference times are provided.
-<details>
-<summary><b>🔧 Technical Details</b></summary>
+### Technical Details
 1. **Random Seed Control**: All random seeds (Python, NumPy, TensorFlow, PyTorch) are fixed to ensure deterministic behavior.
 2. **Data Splits**: 10-fold stratified cross-validation is used for model training and evaluation.
 3. **Hyperparameters**: All hyperparameters are specified in the `CONFIG` dictionary within `train.py` files.
 4. **Model Checkpoints**: Pre-trained models are available for download from Baidu Netdisk.
 5. **Evaluation Metrics**: Metrics including AUROC, AUPRC, F1, precision, and recall are calculated.
 6. **Runtime Information**: Training and inference times are logged and can be found in the training logs.
-</details>
 ## Citation
 Citation information will be updated upon publication. If you find our unified framework or mechanistic interpretations useful, please consider starring this repository.
 ## Contributing
@@ -203,3 +208,35 @@ If you have any questions, encounter issues, or wish to collaborate, please:
 - Contact: [20254257025@stu.suda.edu.cn]
 ---
 **⭐ If you find this project useful, please consider giving it a star on GitHub!**
+```
+---
+### 2. `DynGeo/requirements.txt`
+```text
+# ============================================================
+# DynGeo — Python Dependencies (Verified Environment)
+# ============================================================
+# Tested Environment:
+#   - Python: 3.9.23
+#   - TensorFlow: 2.20.0
+#   - PyTorch: 2.5.1+cu121
+#   - CUDA: 12.1 (Driver: 580.159.03, Supports CUDA 13.0)
+#   - GPU: 2× NVIDIA GeForce GTX 1080 Ti (11 GB each)
+# ============================================================
+# Core Deep Learning Frameworks
+tensorflow>=2.20.0
+torch>=2.5.1
+# Protein Language Models
+fair-esm>=2.0.0
+# Structural Biology & Bioinformatics
+biopython>=1.79
+prody>=2.4.0
+# Scientific Computing Stack
+numpy>=2.0.2
+pandas>=2.3.1
+scipy>=1.13.1
+scikit-learn>=1.6.1
+# I/O & Utilities
+tqdm>=4.67.1
+h5py>=3.14.0
+openpyxl>=3.1.5
+```
