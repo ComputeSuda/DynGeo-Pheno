@@ -60,7 +60,16 @@ DynGeo/
 
 ---
 
-## 🚀 Quick Start
+### ⚡ Zero-shot Inference (No Training Required)
+We provide pre-trained 10-fold models for both tasks. You can directly run inference on the provided test datasets to reproduce the results in our paper.
+1. Ensure you are in the desired task directory (e.g., `cd phosphorylation`).
+2. Ensure the pre-trained models are in the `checkpoints/` directory.
+3. Ensure the test dataset is prepared as `dataset/test_dataset.npz` (see task-specific README).
+4. Run the evaluation:
+```bash
+python test.py
+```
+*The script will automatically load the 10 models, perform ensemble prediction, apply the optimal threshold, and output metrics to `test_results.xlsx`.*
 
 ### 1. Environment Setup
 
