@@ -1,4 +1,4 @@
-# DynGeo: Dynamics-Integrated Geometric Deep Learning for Protein Functional Site Prediction
+# DynGeo: Dynamics-aware geometric learning predicts disease-associated molecular perturbations
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.9+-blue.svg)
 ![TensorFlow](https://img.shields.io/badge/TensorFlow-2.20+-orange.svg)
