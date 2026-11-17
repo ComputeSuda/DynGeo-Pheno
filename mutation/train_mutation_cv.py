@@ -3,17 +3,22 @@
 
 """
 Script: train_mutation_cv.py
+
 Description:
-1. Loads dataset_A_mutation_graphs.pt superset graph cache.
-2. Interfaces with utils.mut_stepladder_selector for ablation presets and dual-band gating.
-3. Trains model.mut_gat_ego.MutEgoGATBatch using mini-batch PyG DataLoader.
-4. Executes strict 10-Fold protein-disjoint cross-validation.
-5. Exports 10-fold evaluation metrics to Excel.
+1. Loads the dataset_A_mutation_graphs.pt superset graph cache.
+2. Interfaces with utils.mut_stepladder_selector for ablation presets
+   (including the Series 3 low/high frequency dual-band gating experiments).
+3. Trains model.mut_gat_ego.MutEgoGATBatch with mini-batch PyG DataLoaders.
+4. Executes strict 10-fold protein-disjoint cross-validation.
+   Training uses the FULL training fold at its natural class ratio; validation folds are evaluated at the
+   same natural prevalence.
+5. Exports the 10-fold evaluation metrics to an Excel report.
 """
 
 import argparse
 import random
 from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
@@ -56,6 +61,7 @@ DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 def set_seed(seed=2026):
+    """Set global random seeds for reproducibility."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -64,7 +70,8 @@ def set_seed(seed=2026):
 
 
 def convert_sample_to_pyg_data(sample, exp_preset):
-    """Construct PyG Data object supporting both dual-band and single-stream presets."""
+    """Construct a PyG Data object supporting both dual-band and
+    single-stream presets."""
     cfg = MUTATION_EXPERIMENT_PRESETS[exp_preset]
     M = int(sample['num_nodes'])
     c_idx = int(sample['center_local_idx'])
@@ -73,7 +80,10 @@ def convert_sample_to_pyg_data(sample, exp_preset):
     center_mask[c_idx] = True
 
     if "node_low" in cfg and "node_high" in cfg:
+        # Dual-band preset (Series 3): decoupled low/high frequency tensors
         x_seq_diff, x_low, x_high, edge_attr = assemble_mutation_dual_band_tensors(sample, exp_preset)
+
+        # Zero-mask the sequence stream for dynamics-only ablations
         if not cfg.get("use_seq", True):
             x_seq_diff = torch.zeros_like(x_seq_diff)
 
@@ -88,7 +98,10 @@ def convert_sample_to_pyg_data(sample, exp_preset):
             num_nodes=M
         )
     else:
+        # Single-stream preset (Series 0/1/2/4)
         x_seq_diff, x_dyn, edge_attr = assemble_mutation_tensors(sample, exp_preset)
+
+        # Zero-mask the sequence stream for dynamics-only ablations
         if not cfg.get("use_seq", True):
             x_seq_diff = torch.zeros_like(x_seq_diff)
 
@@ -106,7 +119,7 @@ def convert_sample_to_pyg_data(sample, exp_preset):
 
 
 def evaluate_val_fold(model, val_loader):
-    """Unbiased evaluation on full validation fold returning 7 standard metrics."""
+    """Unbiased evaluation on the full validation fold, returning 7 metrics."""
     model.eval()
     all_preds = []
     all_labels = []
@@ -149,20 +162,28 @@ def train_single_fold(fold_idx, all_samples, exp_preset, args):
     print(f"\n=======================================================")
     print(f">>> [Fold {fold_idx}/9] Starting training...")
 
+    # 1. Split sample pools (protein-disjoint by fold index)
     train_pool = [s for s in all_samples if s['fold'] != fold_idx]
     val_pool = [s for s in all_samples if s['fold'] == fold_idx]
 
     train_pos = [s for s in train_pool if s['label'] == 1.0]
     train_neg = [s for s in train_pool if s['label'] == 0.0]
 
+    # Full training pool at natural class ratio (no undersampling)
+    epoch_samples = list(train_pool)
+
     val_pyg_list = [convert_sample_to_pyg_data(s, exp_preset) for s in val_pool]
     val_loader = DataLoader(val_pyg_list, batch_size=args.batch_size * 2, shuffle=False)
 
     val_pos_cnt = sum(1 for s in val_pool if s['label'] == 1.0)
     val_neg_cnt = len(val_pool) - val_pos_cnt
-    print(f"  Training pool: Pos {len(train_pos):,} / Neg {len(train_neg):,}")
-    print(f"  Validation pool: Total {len(val_pyg_list):,} (Natural ratio 1:{val_neg_cnt/max(1, val_pos_cnt):.2f})")
+    train_ratio = len(train_neg) / max(1, len(train_pos))
+    print(f"  Training pool: Pos {len(train_pos):,} / Neg {len(train_neg):,} "
+          f"(Natural ratio 1:{train_ratio:.2f}, no undersampling)")
+    print(f"  Validation pool: Total {len(val_pyg_list):,} "
+          f"(Natural ratio 1:{val_neg_cnt/max(1, val_pos_cnt):.2f})")
 
+    # 2. Probe input dimensions from a sample record and build the model
     cfg = MUTATION_EXPERIMENT_PRESETS[exp_preset]
     sample_rec = all_samples[0]
 
@@ -191,24 +212,34 @@ def train_single_fold(fold_idx, all_samples, exp_preset, args):
 
     optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-5)
-    criterion = nn.BCEWithLogitsLoss()
+
+    # Loss: plain BCE by default; optional positive-class weighting via
+    # --pos_weight for imbalanced-ratio experiments (off by default)
+    if args.pos_weight > 0:
+        pw = args.pos_weight if args.pos_weight != 1.0 else train_ratio
+        criterion = nn.BCEWithLogitsLoss(
+            pos_weight=torch.tensor([pw], dtype=torch.float32, device=DEVICE)
+        )
+        print(f"  Using BCEWithLogitsLoss with pos_weight = {pw:.4f}")
+    else:
+        criterion = nn.BCEWithLogitsLoss()
 
     best_val_auprc = -1.0
     best_metrics = {}
     patience = args.patience
     no_improve_count = 0
 
+    # 3. Training loop (full natural-ratio training pool each epoch)
     for epoch in range(1, args.epochs + 1):
         model.train()
         total_loss = 0.0
 
-        n_sample_neg = min(len(train_neg), len(train_pos) * 2)
-        epoch_neg = random.sample(train_neg, n_sample_neg)
-        epoch_samples = train_pos + epoch_neg
         random.shuffle(epoch_samples)
-
-        train_pyg_list = [convert_sample_to_pyg_data(s, exp_preset) for s in epoch_samples]
-        train_loader = DataLoader(train_pyg_list, batch_size=args.batch_size, shuffle=True)
+        train_loader = DataLoader(
+            [convert_sample_to_pyg_data(s, exp_preset) for s in epoch_samples],
+            batch_size=args.batch_size,
+            shuffle=True
+        )
 
         for batch_data in train_loader:
             batch_data = batch_data.to(DEVICE)
@@ -252,7 +283,8 @@ def train_single_fold(fold_idx, all_samples, exp_preset, args):
             print(f"  Early stopping triggered after {patience} epochs without improvement.")
             break
 
-    print(f"Fold {fold_idx} finished | Best AUPRC: {best_metrics['val_auprc']:.4f} (AUROC: {best_metrics['val_auroc']:.4f}, MCC: {best_metrics['val_mcc']:.4f})")
+    print(f"Fold {fold_idx} finished | Best AUPRC: {best_metrics['val_auprc']:.4f} "
+          f"(AUROC: {best_metrics['val_auroc']:.4f}, MCC: {best_metrics['val_mcc']:.4f})")
     return best_metrics
 
 
@@ -269,13 +301,18 @@ def main():
     parser.add_argument("--num_layers", type=int, default=2, help="Number of GATv2 layers")
     parser.add_argument("--dropout", type=float, default=0.3, help="Dropout ratio")
     parser.add_argument("--weight_decay", type=float, default=1e-3, help="L2 weight decay")
+    parser.add_argument("--pos_weight", type=float, default=0.0,
+                        help="Positive-class loss weight (0 = plain BCE, "
+                             "1.0 = auto pos/neg ratio, >1 = explicit value)")
+    parser.add_argument("--seed", type=int, default=2026, help="Global random seed")
     args = parser.parse_args()
 
-    set_seed(2026)
+    set_seed(args.seed)
     print("=================================================================")
     print("=== Missense Mutation 10-Fold CV Training Pipeline ===")
     print(f"Preset: {args.exp_preset} -> {MUTATION_EXPERIMENT_PRESETS[args.exp_preset]['desc']}")
     print(f"Batch Size: {args.batch_size} | LR: {args.lr} | Max Epochs: {args.epochs}")
+    print(f"Training strategy: full natural-ratio pool (no negative undersampling)")
     print(f"Device: {DEVICE}")
     print(f"Cache File: {CACHE_FILE}")
     print("=================================================================")
@@ -283,7 +320,7 @@ def main():
     if not CACHE_FILE.is_file():
         raise FileNotFoundError(f"Mutation graph cache not found: {CACHE_FILE}")
 
-    all_samples = torch.load(CACHE_FILE, map_location="cpu")
+    all_samples = torch.load(CACHE_FILE, map_location="cpu", weights_only=False)
     print(f"Loaded mutation samples: {len(all_samples):,}")
 
     fold_results = []
@@ -302,13 +339,13 @@ def main():
 
     print("\n======================= 10-Fold CV Summary =======================")
     print(f"Preset: {args.exp_preset}")
-    print(f"  Mean AUROC     : {mean_row['val_auroc']:.4f} ± {std_row['val_auroc']:.4f}")
-    print(f"  Mean AUPRC     : {mean_row['val_auprc']:.4f} ± {std_row['val_auprc']:.4f}")
-    print(f"  Mean F1        : {mean_row['val_f1']:.4f} ± {std_row['val_f1']:.4f}")
-    print(f"  Mean Accuracy  : {mean_row['val_acc']:.4f} ± {std_row['val_acc']:.4f}")
-    print(f"  Mean Precision : {mean_row['val_precision']:.4f} ± {std_row['val_precision']:.4f}")
-    print(f"  Mean Recall    : {mean_row['val_recall']:.4f} ± {std_row['val_recall']:.4f}")
-    print(f"  Mean MCC       : {mean_row['val_mcc']:.4f} ± {std_row['val_mcc']:.4f}")
+    print(f"  Mean AUROC     : {mean_row['val_auroc']:.4f} +/- {std_row['val_auroc']:.4f}")
+    print(f"  Mean AUPRC     : {mean_row['val_auprc']:.4f} +/- {std_row['val_auprc']:.4f}")
+    print(f"  Mean F1        : {mean_row['val_f1']:.4f} +/- {std_row['val_f1']:.4f}")
+    print(f"  Mean Accuracy  : {mean_row['val_acc']:.4f} +/- {std_row['val_acc']:.4f}")
+    print(f"  Mean Precision : {mean_row['val_precision']:.4f} +/- {std_row['val_precision']:.4f}")
+    print(f"  Mean Recall    : {mean_row['val_recall']:.4f} +/- {std_row['val_recall']:.4f}")
+    print(f"  Mean MCC       : {mean_row['val_mcc']:.4f} +/- {std_row['val_mcc']:.4f}")
     print("==================================================================")
 
     log_out = RESULTS_DIR / f"result_mut_{args.exp_preset}_10fold.xlsx"
