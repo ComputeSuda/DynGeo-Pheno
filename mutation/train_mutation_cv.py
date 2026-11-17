@@ -6,8 +6,7 @@ Script: train_mutation_cv.py
 
 Description:
 1. Loads the dataset_A_mutation_graphs.pt superset graph cache.
-2. Interfaces with utils.mut_stepladder_selector for ablation presets
-   (including the Series 3 low/high frequency dual-band gating experiments).
+2. Interfaces with utils.mut_stepladder_selector for ablation presets.
 3. Trains model.mut_gat_ego.MutEgoGATBatch with mini-batch PyG DataLoaders.
 4. Executes strict 10-fold protein-disjoint cross-validation.
    Training uses the FULL training fold at its natural class ratio; validation folds are evaluated at the
