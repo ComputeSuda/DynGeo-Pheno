@@ -10,7 +10,169 @@ class InverseLayer(layers.Layer):
         return 1.0 - inputs
     def get_config(self):
         return super(InverseLayer, self).get_config()
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
+"""
+Module: mut_gat_ego.py
+Description:
+Local 3D microenvironment Graph Attention Network (MutEgoGATBatch) for missense mutation prediction:
+1. Sequence projection layer (seq_proj): aligns 128-d ESM embeddings to arbitrary hidden_dim.
+2. Adaptive frequency-band gating (FrequencyBandGating: low vs. high frequency modes).
+3. Sequence-dynamics residual gating fusion.
+4. Edge-biased GATv2 convolutions incorporating geometric distance, cross-correlation, and stiffness.
+5. Dual-stream readout combining central mutated residue (h_center) and microenvironment pooling (h_env).
+"""
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch_geometric.nn import GATv2Conv, global_add_pool
+from torch_geometric.utils import softmax as pyg_softmax
+
+
+class FrequencyBandGating(nn.Module):
+    """Adaptive gating unit for low- and high-frequency dynamic features."""
+    def __init__(self, in_dim_low, in_dim_high, out_dim):
+        super().__init__()
+        self.gate_mlp = nn.Sequential(
+            nn.Linear(in_dim_low + in_dim_high, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1),
+            nn.Sigmoid()
+        )
+        self.proj_low = nn.Linear(in_dim_low, out_dim)
+        self.proj_high = nn.Linear(in_dim_high, out_dim)
+        self.out_ln = nn.LayerNorm(out_dim)
+
+    def forward(self, x_low, x_high):
+        cat_feat = torch.cat([x_low, x_high], dim=-1)
+        gate = self.gate_mlp(cat_feat)
+        h_low = self.proj_low(x_low)
+        h_high = self.proj_high(x_high)
+        fused = gate * h_low + (1.0 - gate) * h_high
+        return self.out_ln(fused), gate
+
+
+class MutEgoGATBatch(nn.Module):
+    def __init__(
+        self,
+        dyn_dim=0,
+        in_dim_low=0,
+        in_dim_high=0,
+        edge_dim=2,
+        hidden_dim=128,
+        num_layers=2,
+        dropout=0.3
+    ):
+        super().__init__()
+        self.hidden_dim = hidden_dim
+        self.is_dual_band = (in_dim_low > 0 and in_dim_high > 0)
+        self.use_dyn = (dyn_dim > 0 or self.is_dual_band)
+
+        # 0. Sequence projection layer aligning 128-d ESM features to hidden_dim 
+        if hidden_dim == 128:
+            self.seq_proj = nn.Identity()
+        else:
+            self.seq_proj = nn.Sequential(
+                nn.Linear(128, hidden_dim),
+                nn.LayerNorm(hidden_dim),
+                nn.GELU()
+            )
+
+        # 1. Dynamic feature adaptor and gating modules 
+        if self.is_dual_band:
+            self.band_gate = FrequencyBandGating(in_dim_low, in_dim_high, hidden_dim)
+            self.gate_fc = nn.Linear(hidden_dim * 2, hidden_dim)
+        elif dyn_dim > 0:
+            self.dyn_adaptor = nn.Sequential(
+                nn.Linear(dyn_dim, 64),
+                nn.GELU(),
+                nn.Linear(64, hidden_dim),
+                nn.LayerNorm(hidden_dim)
+            )
+            self.gate_fc = nn.Linear(hidden_dim * 2, hidden_dim)
+
+        self.node_ln = nn.LayerNorm(hidden_dim)
+
+        # 2. Continuous edge-guided GATv2 backbone 
+        self.conv_layers = nn.ModuleList()
+        self.ln_layers = nn.ModuleList()
+        for _ in range(num_layers):
+            conv = GATv2Conv(
+                in_channels=hidden_dim,
+                out_channels=hidden_dim,
+                heads=4,
+                concat=False,
+                edge_dim=edge_dim,
+                dropout=dropout
+            )
+            self.conv_layers.append(conv)
+            self.ln_layers.append(nn.LayerNorm(hidden_dim))
+
+        self.act = nn.GELU()
+        self.dropout = nn.Dropout(dropout)
+
+        # 3. Microenvironment attention pooling 
+        self.env_attn = nn.Sequential(
+            nn.Linear(hidden_dim, 32),
+            nn.Tanh(),
+            nn.Linear(32, 1)
+        )
+
+        # 4. Dual-stream classification head: [h_center || h_env] 
+        self.classifier = nn.Sequential(
+            nn.Linear(hidden_dim * 2, 64),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(64, 1)
+        )
+
+    def forward(self, batch_data, return_gate=False):
+        x_seq = self.seq_proj(batch_data.x_seq)
+        edge_index = batch_data.edge_index
+        edge_attr = batch_data.edge_attr
+        batch = batch_data.batch
+        center_mask = batch_data.center_mask.bool()
+
+        gate_band = None
+
+        # Step 1: Node-level dynamic gating fusion 
+        if self.is_dual_band and hasattr(batch_data, 'x_dyn_low') and hasattr(batch_data, 'x_dyn_high'):
+            h_dyn, gate_band = self.band_gate(batch_data.x_dyn_low, batch_data.x_dyn_high)
+            gate_seq = torch.sigmoid(self.gate_fc(torch.cat([x_seq, h_dyn], dim=-1)))
+            h = self.node_ln(x_seq + gate_seq * h_dyn)
+        elif self.use_dyn and hasattr(batch_data, 'x_dyn') and batch_data.x_dyn is not None and batch_data.x_dyn.size(-1) > 0 and not torch.all(batch_data.x_dyn == 0):
+            h_dyn = self.dyn_adaptor(batch_data.x_dyn)
+            gate_seq = torch.sigmoid(self.gate_fc(torch.cat([x_seq, h_dyn], dim=-1)))
+            h = self.node_ln(x_seq + gate_seq * h_dyn)
+        else:
+            h = self.node_ln(x_seq)
+
+        # Step 2: Spatial graph attention message passing 
+        for conv, ln in zip(self.conv_layers, self.ln_layers):
+            h_res = h
+            h = conv(h, edge_index, edge_attr=edge_attr)
+            h = ln(h)
+            h = self.act(h)
+            h = self.dropout(h)
+            h = h + h_res
+
+        # Step 3: Extract central mutated residue representation 
+        h_center = h[center_mask]
+
+        # Step 4: Attention-weighted microenvironment pooling 
+        attn_logits = self.env_attn(h)
+        attn_w = pyg_softmax(attn_logits, batch)
+        h_env = global_add_pool(attn_w * h, batch)
+
+        # Step 5: Dual-stream classification 
+        h_pair = torch.cat([h_center, h_env], dim=-1)
+        logits = self.classifier(h_pair).squeeze(-1)
+
+        if return_gate:
+            return logits, gate_band
+        return logits
 class GraphConvolutionLayer(layers.Layer):
     def __init__(self, output_dim, lambda_param=1.3, alpha=0.7, l=1,
                  activation=None, use_bias=True, variant=True, **kwargs):
