@@ -1,207 +1,167 @@
-# DynGeo: Dynamics-aware geometric learning predicts disease-associated molecular perturbations
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Python](https://img.shields.io/badge/python-3.9+-blue.svg)
-![TensorFlow](https://img.shields.io/badge/TensorFlow-2.20+-orange.svg)
-![PyTorch](https://img.shields.io/badge/PyTorch-2.5+-red.svg)
-![Status](https://img.shields.io/badge/status-active-success.svg)
-> A unified geometric deep learning framework integrating protein language model (PLM) embeddings, structural dynamics (ANM), and residue interaction graphs to predict the functional effects of genetic variations and post-translational modifications (PTMs).
-## 📋 Table of Contents
-- [Overview](#overview)
-- [Key Features](#key-features)
-- [Framework Overview](#framework-overview)
-- [Repository Structure](#repository-structure)
-- [Quick Start](#quick-start)
-- [Zero-shot Inference](#zero-shot-inference)
-- [Environment Setup](#environment-setup)
-- [Download AlphaFold Structures](#download-alphafold-structures)
-- [Run a Task](#run-a-task)
-- [Workflow Paradigm](#workflow-paradigm)
-- [Hardware & Software Environment](#hardware--software-environment)
-- [Reproducibility](#reproducibility)
-- [Citation](#citation)
-- [Contributing](#contributing)
-- [License](#license)
-- [Contact](#contact)
-## Overview
-DynGeo is a unified geometric deep learning framework for modeling protein functional perturbations induced by diverse molecular events. By integrating protein language representations, structural dynamics, and residue-level geometric topology, DynGeo learns a shared representation of protein functional landscapes while allowing task-specific adaptations for different biological problems, including pathogenic missense mutations and regulatory phosphorylation sites.
-Without relying on any prior functional annotations during training, DynGeo provides robust predictive power and independent mechanistic insights into how molecular variations alter protein function.
-## Key Features
-- **Unified Multi-Scale Framework**: A consistent geometric learning paradigm that jointly models sequence, structural dynamics, and spatial topology.
-- **Flexible Task Adaptation**: DynGeo maintains a unified learning framework while supporting different biological tasks through task-specific evolutionary representations and graph construction strategies.
-- **Structural Dynamics & ADF**: Incorporates Anisotropic Network Model (ANM) normal mode analysis to capture multiscale protein flexibility. Features are integrated via a novel **Adaptive Dynamic Fusion (ADF)** module that uses feature-wise gating.
-- **Geometry-Aware Graph Learning**: Protein structures are represented as residue contact graphs and processed by a parallel Modified GCN and Two-stage GAT hybrid module to learn local and global structural descriptors.
-## Framework Overview
-DynGeo follows a unified feature extraction and graph learning framework. The overall workflow is shared across different prediction tasks, while only the task-specific evolutionary representation and graph construction strategy are adapted according to the biological problem.
-```mermaid
-flowchart LR
-    A[Protein sequence / structure] --> B[Protein Language Model ESM-2]
-    B --> C[Structural Dynamics ANM]
-    C --> D[Residue Contact Graph Construction]
-    D --> E[Adaptive Dynamic Fusion ADF]
-    E --> F[Hybrid Graph Learning GCN + GAT]
-    F --> G[Task-specific Prediction]
-```
-> **Note**: The neural network architecture remains identical across prediction tasks. Task-specific adaptations are strictly limited to the evolutionary representation (e.g., WT−Mut residual embeddings for missense mutations) and the graph construction strategy (e.g., mutation-centered local graphs vs. dual-scale phosphorylation graphs), while all subsequent learning modules are shared.
-## Repository Structure
-The repository contains two task-specific implementations built upon the same DynGeo framework. Both modules share the overall design philosophy while differing only in task-specific preprocessing and graph construction.
-```text
-DynGeo/
-│
-├── mutation/                     # Implementation for pathogenic missense mutations
-├── phosphorylation/              # Implementation for regulatory phosphorylation sites
-├── environment.yml               # Shared Conda environment configuration
-├── requirements.txt              # Required Python dependencies
-└── README.md                     # Current file
-```
-## Quick Start
-### ⚡ Zero-shot Inference (No Training Required)
-We provide pre-trained 10-fold models for both tasks. You can directly run inference on the provided test datasets to reproduce the results in our paper.
-> **⚠️ Important**: Pre-trained model weights are hosted on Baidu Netdisk due to file size limitations. You must download them before running inference.
-**🔗 Model Download Links:**
-- **Mutation Task**: [Baidu Netdisk Link](https://pan.baidu.com/s/109AK8jtM2114dd9-KZEU1w?pwd=wkev) (Extraction code: `wkev`)
-- **Phosphorylation Task**: [Baidu Netdisk Link](https://pan.baidu.com/s/1hJ1Y6XPR4teGLPYMkUr7-Q?pwd=1ght) (Extraction code: `1ght`)
-**📂 Setup Instructions:**
-1. Download the `checkpoints` folders from the links above.
-2. Place them in the corresponding task directories:
-   ```
-   DynGeo/mutation/checkpoints/
-   DynGeo/phosphorylation/checkpoints/
-   ```
-3. Ensure each `checkpoints` folder contains:
-   - `model_fold_1.keras` to `model_fold_10.keras` (10-fold models)
-   - `train_summary.json` (optimal threshold and metrics)
-> **Note**: The `model.txt` file in the repository also contains these links for your reference.
-4. Ensure the test dataset is prepared as `dataset/test_dataset.npz` (see task-specific README).
-5. Run the evaluation:
-```bash
-python test.py
-```
-*The script will automatically load the 10 models, perform ensemble prediction, apply the optimal threshold, and output metrics to `test_results.xlsx`.*
-### 1. Environment Setup
-We recommend using `conda` to manage the environment. DynGeo requires Python ≥3.9, PyTorch ≥2.5, and TensorFlow ≥2.20.
-```bash
-git clone https://github.com/ComputeSuda/DynGeo.git
-cd DynGeo
-# Create the environment using the provided yml file
-conda env create -f environment.yml
-conda activate dl_env
-```
-Alternatively, you can use `pip` with the provided `requirements.txt`:
-```bash
-pip install -r requirements.txt
-```
-### 2. Download AlphaFold Structures
-Both tasks require high-quality structural inputs. Please refer to the `pdbs/download_pdbs.txt` file in each task directory to fetch the corresponding PDB files from the [AlphaFold Protein Structure Database](https://alphafold.ebi.ac.uk/).
-### 3. Run a Task
-Choose the biological task you want to model and navigate to its dedicated directory. Each directory contains a detailed, step-by-step README for reproducing the pipeline.
-**For Phosphorylation Site Prediction:**
-```bash
-cd phosphorylation
-# Follow instructions in phosphorylation/README.md
-```
-**For Mutation Effect Prediction:**
-```bash
-cd mutation
-# Follow instructions in mutation/README.md
-```
-## Workflow Paradigm
-DynGeo's data processing follows a highly efficient **"Extract-Once, Index-Twice"** paradigm. Computationally expensive physics and language features are extracted once per full-length protein and cached, preventing computational redundancy.
-```mermaid
-flowchart LR
-    A[Raw protein annotations<br>Mutations or PTMs] --> B[Sample preparation]
-    B --> C[Protein-level feature extraction]
-    C --> D[ESM-2 embeddings]
-    C --> E[ANM multi-scale dynamics]
-    C --> F[Contact graphs]
-    D --> G[Task-specific graph construction]
-    E --> G
-    F --> G
-    G --> H[Adaptive Dynamic Fusion]
-    H --> I[Hybrid Graph Learning]
-    I --> J[Final Prediction]
-```
-## Hardware & Software Environment
-DynGeo was developed and tested on the following hardware and software configuration.
-### Tested Hardware Configuration
-| Component | Specification |
-|:---|:---|
-| **GPU** | 2× NVIDIA GeForce GTX 1080 Ti (11 GB GDDR5X each) |
-| **CPU** | (Please run: `lscpu \| grep "Model name"`) |
-| **RAM** | (Please run: `free -h \| grep Mem`) |
-| **OS** | (Please run: `cat /etc/os-release \| grep PRETTY_NAME`) |
-### NVIDIA Driver & CUDA
-| Component | Version |
-|:---|:---|
-| **NVIDIA Driver** | 580.159.03 |
-| **CUDA Version (Driver)** | 13.0 |
-| **CUDA Version (Runtime, via PyTorch)** | 12.1 |
-| **cuDNN** | (Version bundled with PyTorch 2.5.1+cu121) |
-### Python Environment
-| Package | Version | Source |
-|:---|:---|:---|
-| **Python** | 3.9.23 | conda-forge |
-| **tensorflow** | 2.20.0 | pypi |
-| **torch** | 2.5.1+cu121 | pypi |
-| **fair-esm** | 2.0.0 | pypi |
-| **biopython** | (conda-forge, version ≥1.79) | conda |
-| **prody** | (conda-forge, version ≥2.4.0) | conda |
-| **numpy** | 2.0.2 | conda-forge |
-| **pandas** | 2.3.1 | conda-forge |
-| **scipy** | 1.13.1 | conda-forge |
-| **scikit-learn** | 1.6.1 | conda-forge |
-| **tqdm** | 4.67.1 | conda-forge |
-| **h5py** | 3.14.0 | pypi |
-| **openpyxl** | 3.1.5 | conda-forge |
-### Complete Conda Environment Export
-The complete environment can be reproduced from scratch using the following commands:
-```bash
-# Create environment from scratch
-conda create -n dl_env python=3.9.23
-conda activate dl_env
-# Install PyTorch with CUDA 12.1
-pip install torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu121 --index-url https://download.pytorch.org/whl/cu121
-# Install TensorFlow
-pip install tensorflow==2.20.0
-# Install remaining dependencies
-pip install fair-esm==2.0.0 biopython>=1.79 prody>=2.4.0 \
-            numpy==2.0.2 pandas==2.3.1 scipy==1.13.1 \
-            scikit-learn==1.6.1 tqdm==4.67.1 \
-            h5py==3.14.0 openpyxl==3.1.5
-```
-## Reproducibility
-To ensure full reproducibility of experimental results, we provide the following checklist and resources:
-### ✅ Reproducibility Checklist
-- [x] **Code Availability**: Complete source code is available on GitHub.
-- [x] **Dependency Specification**: `environment.yml` and `requirements.txt` files are provided.
-- [x] **Random Seed Control**: All random seeds are fixed in training scripts.
-- [x] **Data Splits**: Training/validation/test splits are clearly defined.
-- [x] **Hyperparameters**: All hyperparameters are specified in configuration files.
-- [x] **Model Checkpoints**: Pre-trained 10-fold models are available for download.
-- [x] **Evaluation Metrics**: Evaluation metrics are clearly defined.
-- [x] **Hardware Specification**: Hardware configuration is documented.
-- [x] **Runtime Information**: Training and inference times are provided.
-### Technical Details
-1. **Random Seed Control**: All random seeds (Python, NumPy, TensorFlow, PyTorch) are fixed to ensure deterministic behavior.
-2. **Data Splits**: 10-fold stratified cross-validation is used for model training and evaluation.
-3. **Hyperparameters**: All hyperparameters are specified in the `CONFIG` dictionary within `train.py` files.
-4. **Model Checkpoints**: Pre-trained models are available for download from Baidu Netdisk.
-5. **Evaluation Metrics**: Metrics including AUROC, AUPRC, F1, precision, and recall are calculated.
-6. **Runtime Information**: Training and inference times are logged and can be found in the training logs.
-## Citation
-Citation information will be updated upon publication. If you find our unified framework or mechanistic interpretations useful, please consider starring this repository.
-## Contributing
-We welcome contributions from the community! If you'd like to contribute, please follow these steps:
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-## License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-## Contact
-If you have any questions, encounter issues, or wish to collaborate, please:
-- Open an issue in the GitHub repository
-- Contact: [20254257025@stu.suda.edu.cn]
+# DynGeo-Pheno
+
+**DynGeo-Pheno** is a geometric deep learning framework that integrates evolutionary sequence representations (**ESM-2**) with multi-band structural dynamics derived from Elastic Network Models (**ANM / GNM**) through edge-biased Graph Attention Networks (**GATv2**).
+
+It provides two task-specific pipelines, both evaluated under strict **protein-disjoint** protocols (zero UniProt overlap between training and validation folds):
+
+1. **Disease-Associated Phosphorylation Site Prediction** — full-length protein contact graph architecture (`PhosDualStreamGNN`), contacts within 10 Å, macro (whole-protein) vs. micro (8 Å site mask) dual-stream readout.
+2. **Pathogenic Missense Mutation Prediction** — local 3D ego-subgraph architecture (`MutEgoGATBatch`), k=32 neighbors within 12 Å, center vs. micro-environment dual-stream readout.
+
+**Core design**: sequence and dynamics features are fused via a **residual gated mechanism**, and low-/high-frequency dynamics are combined by a learnable **FrequencyBandGating** module. The same network architecture supports all ablation presets — feature masking is handled entirely at the data-assembly level.
+
 ---
-**⭐ If you find this project useful, please consider giving it a star on GitHub!**
+
+## Repository Structure
+
+```text
+DynGeo-Pheno/
+├── features/
+│   └── feature_plugins.py                     # Derive RMSF / CC / PRS / Stiffness
+│                                              # from ANM-GNM spectral caches (multiprocessing)
+├── phosphorylation/
+│   ├── model/
+│   │   └── phos_gat_dual_stream.py            # PhosDualStreamGNN model definition
+│   ├── preprocess/
+│   │   └── build_phos_graphs.py               # Build full-length protein graphs (Library A & B)
+│   ├── train_cv.py                            # 10-fold cross-validation training script
+│   └── utils/
+│       └── dyn_stepladder_selector.py         # Ablation preset & frequency-band tensor assembler
+├── mutation/
+│   ├── model/
+│   │   └── mut_gat_ego.py                     # MutEgoGATBatch model definition
+│   ├── preprocess/
+│   │   ├── build_mutation_libraryA_graphs.py  # Build 10-fold CV ego-graphs (Library A)
+│   │   └── build_mutation_libraryB_graphs.py  # Build external test ego-graphs (DDD & Cancer Hotspot)
+│   ├── train_mutation_cv.py                   # 10-fold cross-validation training script
+│   └── utils/
+│       └── mut_stepladder_selector.py         # Ablation preset & frequency-band tensor assembler
+└── README.md
+```
+
+---
+
+## Environment Setup
+
+```bash
+conda create -n dyngeo python=3.10 -y
+conda activate dyngeo
+
+# PyTorch and PyTorch Geometric (adjust CUDA version for your system)
+pip install torch torchvision torchaudio
+pip install torch_geometric
+
+# Scientific dependencies
+pip install numpy scipy pandas scikit-learn tqdm openpyxl prody
+```
+
+---
+
+## Data Preparation
+
+Place precomputed inputs under `data/` at the repository root:
+
+```text
+data/
+├── AlphaFold_pdb/            # AlphaFold structures used for graph construction
+├── Raw_Spectral_Cache/       # ANM/GNM eigendecomposition caches: {stem}_spectral.npz
+│                             #   keys: coords, resnums, anm_eigvals, anm_u,
+│                             #         gnm_eigvals, gnm_vecs
+├── ESM_128d/                 # 128-d PCA-projected wild-type ESM-2 embeddings
+└── ESM_128d_mut/             # 128-d PCA-projected mutant ESM-2 embeddings
+```
+
+Benchmark tables (standardized to the columns `ACC_ID`, `pdb_stem`, `site_str`, `site`, `plddt`, `Label`, `fold`) should be placed at:
+
+```text
+phosphorylation/processed_graphs/data_scheme1/   # Library A / Library B tables
+mutation/processed_graphs/                       # Library A / B1 / B2 tables
+```
+
+### Step 1 — Derive Dynamics Features
+
+From the spectral caches, derive all physical descriptors:
+
+```bash
+python features/feature_plugins.py
+```
+
+Outputs (written to `data/Extracted_Features/`):
+
+| Directory      | Contents                                                             |
+| -------------- | -------------------------------------------------------------------- |
+| `RMSF/`      | ANM & GNM root-mean-square fluctuations across all frequency slices  |
+| `CC/`        | Cross-correlation matrices (contact-masked, normalized)              |
+| `PRS/`       | Perturbation-response scanning: sensitivity & effectiveness per band |
+| `Stiffness/` | Analytic mechanical stiffness matrix                                 |
+
+Frequency slices generated per protein: `first10/20/30/40/60`, `last10/20/30/40/60`, `first2pct`, `last2pct`, `all` (2% = length-adaptive).
+
+---
+
+## Task 1: Disease-Associated Phosphorylation Site Prediction
+
+### 1. Build Full-Protein Graph Caches
+
+```bash
+python phosphorylation/preprocess/build_phos_graphs.py
+```
+
+Constructs full-length contact graphs (≤10 Å) with per-site 8 Å micro-environment masks, supporting multiple candidate sites per protein in a single forward pass.
+
+### 2. 10-Fold Cross-Validation Training
+
+```bash
+python phosphorylation/train_cv.py \
+    --exp_preset exp_3c_mix_30 \
+    --num_layers 2 \
+    --hidden_dim 256 \
+    --lr 1e-4 \
+    --dropout 0.2 \
+    --epochs 20
+```
+
+---
+
+## Task 2: Pathogenic Missense Mutation Prediction
+
+### 1. Build Ego-Graph Caches
+
+```bash
+python mutation/preprocess/build_mutation_libraryA_graphs.py
+python mutation/preprocess/build_mutation_libraryB_graphs.py
+```
+
+Each mutation site becomes a local ego-graph  carrying the ESM difference `Δh = h_WT − h_MUT`, all-band dynamics node features, and continuous mechanics-guided edge attributes (distance, inverse distance, CC, stiffness).
+
+### 2. 10-Fold Cross-Validation Training
+
+```bash
+python mutation/train_mutation_cv.py \
+    --exp_preset exp_3c_mix_30 \
+    --num_layers 1 \
+    --hidden_dim 128 \
+    --lr 1e-4 \
+    --dropout 0.3 \
+    --batch_size 256 \
+    --epochs 20
+```
+
+---
+
+## Ablation Presets
+
+Both training scripts accept `--exp_preset` for on-the-fly feature slicing. All presets share the identical network architecture — ablation is realized purely through input masking.
+
+| Preset                | Node Features               | Purpose                                       |
+| --------------------- | --------------------------- | --------------------------------------------- |
+| `exp_0_seq_only`    | —                          | ESM-only lower bound                          |
+| `exp_dyn_only`      | low30 + high30 (ESM masked) | Dynamics-only                                 |
+| `exp_1a_rmsf_only`  | RMSF (ANM+GNM, first30)     | Flexibility mechanism                         |
+| `exp_1b_prs_only`   | PRS (Sens+Eff, first30)     | Allosteric perturbation mechanism             |
+| `exp_1c_cc_only`    | — (CC edge bias)           | Correlated-motion mechanism                   |
+| `exp_1d_stiff_only` | — (stiffness edge)         | Elastic stiffness mechanism                   |
+| `exp_2a`–`2g`    | first10 → 60, 2%, all      | Low-frequency modal-capacity scan             |
+| `exp_2h`–`2m`    | last10 → 60, 2%            | High-frequency negative controls              |
+| `exp_3a`–`3f`    | low + high dual-band        | Adaptive band gating (**3c = primary**) |
+
 
